@@ -1,5 +1,6 @@
 const { ethers } = require('hardhat');
 const { expect } = require('chai');
+const { time } = require('@nomicfoundation/hardhat-network-helpers');
 
 describe('[Challenge] Unstoppable', function () {
     let deployer, player, someUser;
@@ -40,11 +41,16 @@ describe('[Challenge] Unstoppable', function () {
         receiverContract = await (await ethers.getContractFactory('ReceiverUnstoppable', someUser)).deploy(
             vault.address
         );
-        await receiverContract.executeFlashLoan(100n * 10n ** 18n);
+        expect(await receiverContract.owner()).to.eq(someUser.address);
+        await expect(
+            receiverContract.executeFlashLoan(100n * 10n ** 18n)
+        ).not.to.be.reverted;
     });
 
     it('Execution', async function () {
         /** CODE YOUR SOLUTION HERE */
+        const endTime = await vault.end();
+        await time.increaseTo(endTime);
     });
 
     after(async function () {
@@ -53,6 +59,9 @@ describe('[Challenge] Unstoppable', function () {
         // It is no longer possible to execute flash loans
         await expect(
             receiverContract.executeFlashLoan(100n * 10n ** 18n)
-        ).to.be.reverted;
+        ).to.be.revertedWithCustomError(
+          receiverContract,
+          "UnexpectedFlashLoan"
+        );
     });
 });
