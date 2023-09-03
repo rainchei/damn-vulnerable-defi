@@ -64,12 +64,12 @@ describe('[Challenge] Free Rider', function () {
         );
         
         // Get a reference to the created Uniswap pair
-        uniswapPair = await (new ethers.ContractFactory(pairJson.abi, pairJson.bytecode, deployer)).attach(
+        uniswapPair = (new ethers.ContractFactory(pairJson.abi, pairJson.bytecode, deployer)).attach(
             await uniswapFactory.getPair(token.address, weth.address)
         );
         expect(await uniswapPair.token0()).to.eq(weth.address);
         expect(await uniswapPair.token1()).to.eq(token.address);
-        expect(await uniswapPair.balanceOf(deployer.address)).to.be.gt(0);
+        expect(await uniswapPair.balanceOf(deployer.address)).to.be.gt(0);  // LP token greater then 0
 
         // Deploy the marketplace and get the associated ERC721 token
         // The marketplace will automatically mint AMOUNT_OF_NFTS to the deployer (see `FreeRiderNFTMarketplace::constructor`)
@@ -78,8 +78,8 @@ describe('[Challenge] Free Rider', function () {
             { value: MARKETPLACE_INITIAL_ETH_BALANCE }
         );
 
-        // Deploy NFT contract
-        nft = await (await ethers.getContractFactory('DamnValuableNFT', deployer)).attach(await marketplace.token());
+        // Attach the NFT token from the marketplace
+        nft = (await ethers.getContractFactory('DamnValuableNFT', deployer)).attach(await marketplace.token());
         expect(await nft.owner()).to.eq(ethers.constants.AddressZero); // ownership renounced
         expect(await nft.rolesOf(marketplace.address)).to.eq(await nft.MINTER_ROLE());
 
@@ -88,6 +88,7 @@ describe('[Challenge] Free Rider', function () {
             expect(await nft.ownerOf(id)).to.be.eq(deployer.address);
         }
         await nft.setApprovalForAll(marketplace.address, true);
+        expect(await nft.isApprovedForAll(deployer.address, marketplace.address)).to.be.eq(true);
 
         // Open offers in the marketplace
         await marketplace.offerMany(
@@ -106,6 +107,13 @@ describe('[Challenge] Free Rider', function () {
 
     it('Execution', async function () {
         /** CODE YOUR SOLUTION HERE */
+        const hackFreeRider = await (await ethers.getContractFactory('HackFreeRider', player)).deploy(
+            uniswapPair.address,
+            uniswapRouter.address,
+            marketplace.address,
+            devsContract.address
+        )
+        await hackFreeRider.connect(player).hack(NFT_PRICE);
     });
 
     after(async function () {
