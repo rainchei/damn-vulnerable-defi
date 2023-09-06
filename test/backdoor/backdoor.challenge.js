@@ -46,6 +46,23 @@ describe('[Challenge] Backdoor', function () {
 
     it('Execution', async function () {
         /** CODE YOUR SOLUTION HERE */
+
+        // Findings:
+        // - The users have been registered as beneficiaries
+        // - The users have not yet deployed the wallets to the registry
+        // - The users have not yet claimed the rewards of tokens
+        // - The initializer of the wallet could be included with a contract address with payload to
+        //   execute a delegatecall
+
+        // Solution:
+        // Create the wallets and register them for the users. Since the rewards are transferred to 
+        // the wallets instead of the users EOA, we can exploit it with the delegatecall which included
+        // in the initializer. Use the delegatecall to approve some amount of tokens for us.
+        await (await ethers.getContractFactory("HackBackdoor", player)).deploy(
+            walletRegistry.address,
+            users,
+            { gasLimit: 2e6 }
+        )
     });
 
     after(async function () {
