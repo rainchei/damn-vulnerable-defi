@@ -6,7 +6,7 @@ describe('[Challenge] Climber', function () {
     let deployer, proposer, sweeper, player;
     let timelock, vault, token;
 
-    const VAULT_TOKEN_BALANCE = 10000000n * 10n ** 18n;
+    const VAULT_TOKEN_BALANCE = 10_000_000n * 10n ** 18n;
     const PLAYER_INITIAL_ETH_BALANCE = 1n * 10n ** 17n;
     const TIMELOCK_DELAY = 60 * 60;
 
@@ -32,9 +32,7 @@ describe('[Challenge] Climber', function () {
         
         // Instantiate timelock
         let timelockAddress = await vault.owner();
-        timelock = await (
-            await ethers.getContractFactory('ClimberTimelock', deployer)
-        ).attach(timelockAddress);
+        timelock = (await ethers.getContractFactory('ClimberTimelock', deployer)).attach(timelockAddress);
         
         // Ensure timelock delay is correct and cannot be changed
         expect(await timelock.delay()).to.eq(TIMELOCK_DELAY);
@@ -58,6 +56,17 @@ describe('[Challenge] Climber', function () {
 
     it('Execution', async function () {
         /** CODE YOUR SOLUTION HERE */
+        const hackClimber = await (await ethers.getContractFactory('HackClimber', player)).deploy(
+            timelock.address,
+            token.address,
+            vault.address,
+            player.address
+        );
+        const receipt = await hackClimber.hack();
+        expect(
+            await timelock.hasRole(ethers.utils.id("PROPOSER_ROLE"), hackClimber.address)
+        ).to.be.true;
+        expect(receipt).to.emit(hackClimber, "Upgraded").withArgs(hackClimber.address);
     });
 
     after(async function () {
